@@ -131,7 +131,9 @@ jobs:
 
           # Wait for tunnel URL
           for i in {1..30}; do
-            if TUNNEL_URL=$(grep -o 'https://[^[:space:]]*\.trycloudflare\.com' tunnel.log | head -1); then
+            match=$(grep -o 'https://[^[:space:]]*\.trycloudflare\.com' tunnel.log | head -1 || true)
+            if [ -n "$match" ]; then
+              TUNNEL_URL=$match
               echo "Found tunnel URL: $TUNNEL_URL"
               break
             fi
@@ -139,7 +141,7 @@ jobs:
             sleep 2
           done
 
-          if [ -z "$TUNNEL_URL" ]; then
+          if [ -z "${TUNNEL_URL:-}" ]; then
             echo "Failed to get tunnel URL"
             cat tunnel.log
             exit 1
