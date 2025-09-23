@@ -1,0 +1,11 @@
+# Cloudflare Named Tunnel Configuration
+# Copy this file to .tunnel-config and fill in your values
+
+# Your Cloudflare tunnel token (get from dashboard)
+TUNNEL_TOKEN="your-tunnel-token-here"
+
+# Your tunnel domain (e.g., dev.yourdomain.tld)
+TUNNEL_DOMAIN="dev.yourdomain.tld"
+
+# Your tunnel name (for reference)
+TUNNEL_NAME="myshop-dev"

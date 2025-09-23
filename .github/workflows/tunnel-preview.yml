@@ -1,0 +1,272 @@
+name: 🚀 Tunnel Preview
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+    types: [ opened, synchronize, reopened ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'preview'
+        type: choice
+        options:
+        - preview
+        - staging
+        - development
+
+jobs:
+  tunnel-preview:
+    runs-on: ubuntu-latest
+
+    outputs:
+      tunnel-url: ${{ steps.tunnel.outputs.url }}
+      preview-url: ${{ steps.tunnel.outputs.preview_url }}
+      admin-url: ${{ steps.tunnel.outputs.admin_url }}
+
+    steps:
+      - name: 🏗️ Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐳 Set up Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🔧 Configure environment
+        id: config
+        run: |
+          # Determine environment
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            ENV="preview"
+            PR_NUMBER="${{ github.event.number }}"
+            BRANCH_NAME="${{ github.head_ref }}"
+          else
+            ENV="${{ github.event.inputs.environment }}"
+            PR_NUMBER=""
+            BRANCH_NAME="${{ github.ref_name }}"
+          fi
+
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "subdomain=${ENV}-${BRANCH_NAME//[^a-zA-Z0-9]/-}" >> $GITHUB_OUTPUT
+
+      - name: 🌍 Setup environment file
+        run: |
+          cp .env.example .env
+
+          # Configure for CI environment
+          sed -i 's/WP_ENV=development/WP_ENV=${{ steps.config.outputs.environment }}/' .env
+          sed -i 's/localhost:8080/localhost:8080/' .env
+          sed -i 's/DB_HOST=db/DB_HOST=127.0.0.1/' .env
+
+          # Add GitHub-specific settings
+          echo "" >> .env
+          echo "# GitHub Actions Environment" >> .env
+          echo "GITHUB_ACTIONS=true" >> .env
+          echo "PR_NUMBER=${{ steps.config.outputs.pr_number }}" >> .env
+          echo "BRANCH_NAME=${{ steps.config.outputs.branch_name }}" >> .env
+
+      - name: 🐳 Start WordPress services
+        run: |
+          # Use CI-specific docker-compose
+          cat > docker-compose.ci.yml << 'EOF'
+          version: '3.8'
+          services:
+            db:
+              image: mysql:8.0
+              environment:
+                MYSQL_ROOT_PASSWORD: root
+                MYSQL_DATABASE: wordpress
+                MYSQL_USER: wordpress
+                MYSQL_PASSWORD: wordpress
+              ports:
+                - "3306:3306"
+              options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+            php:
+              build:
+                context: .
+                dockerfile: .docker/php/Dockerfile
+              volumes:
+                - .:/var/www/html
+              depends_on:
+                - db
+              environment:
+                - WP_ENV=${{ steps.config.outputs.environment }}
+
+            nginx:
+              image: nginx:alpine
+              ports:
+                - "8080:80"
+              volumes:
+                - .:/var/www/html
+                - ./.docker/nginx/conf.d:/etc/nginx/conf.d
+              depends_on:
+                - php
+          EOF
+
+          docker compose -f docker-compose.ci.yml up -d --build
+
+          # Wait for services to be ready
+          sleep 30
+
+          # Test if WordPress is accessible
+          curl -f http://localhost:8080 || (docker compose -f docker-compose.ci.yml logs && exit 1)
+
+      - name: 🔗 Setup Cloudflare Tunnel
+        id: tunnel
+        run: |
+          # Install cloudflared
+          curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
+          chmod +x cloudflared
+
+          # Start tunnel in background
+          ./cloudflared tunnel --no-autoupdate --url http://localhost:8080 > tunnel.log 2>&1 &
+          TUNNEL_PID=$!
+
+          # Wait for tunnel URL
+          for i in {1..30}; do
+            if TUNNEL_URL=$(grep -o 'https://[^[:space:]]*\.trycloudflare\.com' tunnel.log | head -1); then
+              echo "Found tunnel URL: $TUNNEL_URL"
+              break
+            fi
+            echo "Waiting for tunnel... ($i/30)"
+            sleep 2
+          done
+
+          if [ -z "$TUNNEL_URL" ]; then
+            echo "Failed to get tunnel URL"
+            cat tunnel.log
+            exit 1
+          fi
+
+          # Set outputs
+          echo "url=$TUNNEL_URL" >> $GITHUB_OUTPUT
+          echo "preview_url=$TUNNEL_URL" >> $GITHUB_OUTPUT
+          echo "admin_url=$TUNNEL_URL/wp/wp-admin" >> $GITHUB_OUTPUT
+
+          # Save PID for cleanup
+          echo "TUNNEL_PID=$TUNNEL_PID" >> $GITHUB_ENV
+
+      - name: 🏗️ Install WordPress
+        run: |
+          # Install Composer dependencies
+          docker compose -f docker-compose.ci.yml exec -T php composer install --no-dev --optimize-autoloader
+
+          # Install WordPress
+          docker compose -f docker-compose.ci.yml run --rm -T php wp core install \
+            --url="${{ steps.tunnel.outputs.url }}" \
+            --title="Preview: ${{ steps.config.outputs.branch_name }}" \
+            --admin_user="preview" \
+            --admin_password="preview-${{ github.run_id }}" \
+            --admin_email="preview@example.com" \
+            --path="/var/www/html/web/wp"
+
+          # Activate WooCommerce if available
+          docker compose -f docker-compose.ci.yml run --rm -T php wp plugin activate woocommerce \
+            --path="/var/www/html/web/wp" || echo "WooCommerce not found"
+
+          # Update WordPress URLs
+          docker compose -f docker-compose.ci.yml run --rm -T php wp option update home \
+            "${{ steps.tunnel.outputs.url }}" --path="/var/www/html/web/wp"
+          docker compose -f docker-compose.ci.yml run --rm -T php wp option update siteurl \
+            "${{ steps.tunnel.outputs.url }}/wp" --path="/var/www/html/web/wp"
+
+      - name: 🧪 Run basic tests
+        run: |
+          # Test homepage
+          curl -f "${{ steps.tunnel.outputs.url }}" > /dev/null
+          echo "✅ Homepage accessible"
+
+          # Test admin login page
+          curl -f "${{ steps.tunnel.outputs.admin_url }}" > /dev/null
+          echo "✅ Admin login accessible"
+
+          # Test WordPress API
+          curl -f "${{ steps.tunnel.outputs.url }}/wp-json/wp/v2/" > /dev/null
+          echo "✅ WordPress API accessible"
+
+      - name: 📝 Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comment = `## 🚀 Preview Deployment Ready!
+
+            Your changes are now live and ready for testing:
+
+            | 🔗 | URL |
+            |---|---|
+            | 🌐 **Shop** | ${{ steps.tunnel.outputs.preview_url }} |
+            | 🔑 **Admin** | ${{ steps.tunnel.outputs.admin_url }} |
+
+            ### 📋 Test Credentials
+            - **Username:** \`preview\`
+            - **Password:** \`preview-${{ github.run_id }}\`
+
+            ### 📊 Deployment Info
+            - **Environment:** ${{ steps.config.outputs.environment }}
+            - **Branch:** \`${{ steps.config.outputs.branch_name }}\`
+            - **Commit:** \`${{ github.sha }}\`
+
+            ### ⚡ Quick Actions
+            - [ ] Test basic functionality
+            - [ ] Check responsive design
+            - [ ] Verify WooCommerce features
+            - [ ] Test admin access
+
+            ---
+            *This preview will be available until the workflow completes. The tunnel URL is temporary and will change on each deployment.*
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: 🔍 Keep tunnel alive
+        run: |
+          echo "Tunnel is running at: ${{ steps.tunnel.outputs.url }}"
+          echo "Keeping tunnel alive for review..."
+
+          # Keep tunnel alive for 30 minutes or until workflow is cancelled
+          timeout 1800 tail -f tunnel.log || echo "Tunnel timeout reached"
+
+      - name: 🧹 Cleanup
+        if: always()
+        run: |
+          # Kill tunnel if still running
+          if [ ! -z "$TUNNEL_PID" ]; then
+            kill $TUNNEL_PID 2>/dev/null || true
+          fi
+
+          # Stop Docker services
+          docker compose -f docker-compose.ci.yml down -v || true
+
+  update-status:
+    needs: tunnel-preview
+    runs-on: ubuntu-latest
+    if: always() && github.event_name == 'pull_request'
+
+    steps:
+      - name: 📊 Update deployment status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const state = '${{ needs.tunnel-preview.result }}' === 'success' ? 'success' : 'failure';
+            const description = state === 'success'
+              ? 'Preview deployment successful!'
+              : 'Preview deployment failed';
+
+            github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: state,
+              target_url: '${{ needs.tunnel-preview.outputs.preview-url }}',
+              description: description,
+              context: 'ci/preview-deployment'
+            });

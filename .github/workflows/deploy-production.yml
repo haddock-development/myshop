@@ -1,0 +1,222 @@
+name: 🚀 Deploy Production (Cloudflare Tunnel)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - production
+        - staging
+
+env:
+  PRODUCTION_DOMAIN: ${{ secrets.PRODUCTION_DOMAIN }}
+  STAGING_DOMAIN: ${{ secrets.STAGING_DOMAIN }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    environment:
+      name: ${{ github.event.inputs.environment || 'production' }}
+      url: https://${{ github.event.inputs.environment == 'staging' && env.STAGING_DOMAIN || env.PRODUCTION_DOMAIN }}
+
+    steps:
+      - name: 🏗️ Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Configure environment
+        id: config
+        run: |
+          if [ "${{ github.event.inputs.environment }}" = "staging" ]; then
+            ENV="staging"
+            DOMAIN="${{ env.STAGING_DOMAIN }}"
+            TUNNEL_TOKEN="${{ secrets.STAGING_TUNNEL_TOKEN }}"
+          else
+            ENV="production"
+            DOMAIN="${{ env.PRODUCTION_DOMAIN }}"
+            TUNNEL_TOKEN="${{ secrets.PRODUCTION_TUNNEL_TOKEN }}"
+          fi
+
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          echo "domain=$DOMAIN" >> $GITHUB_OUTPUT
+          echo "tunnel_token=$TUNNEL_TOKEN" >> $GITHUB_OUTPUT
+
+      - name: 🛡️ Validate secrets
+        run: |
+          if [ -z "${{ steps.config.outputs.tunnel_token }}" ]; then
+            echo "❌ Missing tunnel token for ${{ steps.config.outputs.environment }}"
+            echo "Required secrets:"
+            echo "- PRODUCTION_TUNNEL_TOKEN"
+            echo "- STAGING_TUNNEL_TOKEN (optional)"
+            echo "- PRODUCTION_DOMAIN"
+            echo "- STAGING_DOMAIN (optional)"
+            exit 1
+          fi
+
+      - name: 🐳 Set up Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🌍 Create production .env
+        run: |
+          cp .env.example .env
+
+          # Production configuration
+          cat >> .env << EOF
+
+          # Production Environment
+          WP_ENV=${{ steps.config.outputs.environment }}
+          WP_HOME=https://${{ steps.config.outputs.domain }}
+          WP_SITEURL=https://${{ steps.config.outputs.domain }}/wp
+
+          # Database (configure these in GitHub secrets)
+          DB_NAME=${{ secrets.DB_NAME }}
+          DB_USER=${{ secrets.DB_USER }}
+          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+          DB_HOST=${{ secrets.DB_HOST || '127.0.0.1' }}
+
+          # Security
+          DISALLOW_FILE_MODS=true
+          WP_DEBUG=false
+          WP_DEBUG_LOG=false
+          WP_DEBUG_DISPLAY=false
+
+          # WordPress Salts
+          AUTH_KEY='${{ secrets.AUTH_KEY }}'
+          SECURE_AUTH_KEY='${{ secrets.SECURE_AUTH_KEY }}'
+          LOGGED_IN_KEY='${{ secrets.LOGGED_IN_KEY }}'
+          NONCE_KEY='${{ secrets.NONCE_KEY }}'
+          AUTH_SALT='${{ secrets.AUTH_SALT }}'
+          SECURE_AUTH_SALT='${{ secrets.SECURE_AUTH_SALT }}'
+          LOGGED_IN_SALT='${{ secrets.LOGGED_IN_SALT }}'
+          NONCE_SALT='${{ secrets.NONCE_SALT }}'
+
+          # Deployment info
+          DEPLOY_COMMIT=${{ github.sha }}
+          DEPLOY_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          DEPLOY_ENVIRONMENT=${{ steps.config.outputs.environment }}
+          EOF
+
+      - name: 🏗️ Build production containers
+        run: |
+          # Build optimized images
+          docker compose build --no-cache
+
+          # Start services
+          docker compose up -d
+
+          # Wait for services
+          sleep 30
+
+          # Install production dependencies
+          docker compose exec -T php composer install --no-dev --optimize-autoloader --no-interaction
+
+      - name: 🔗 Start Cloudflare Tunnel
+        id: tunnel
+        run: |
+          # Download cloudflared
+          curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
+          chmod +x cloudflared
+
+          # Start named tunnel
+          ./cloudflared tunnel --no-autoupdate run --token "${{ steps.config.outputs.tunnel_token }}" > tunnel.log 2>&1 &
+          TUNNEL_PID=$!
+
+          # Wait for tunnel to establish
+          sleep 15
+
+          # Check if tunnel is running
+          if ! ps -p $TUNNEL_PID > /dev/null; then
+            echo "❌ Tunnel failed to start"
+            cat tunnel.log
+            exit 1
+          fi
+
+          echo "✅ Tunnel started successfully"
+          echo "tunnel_pid=$TUNNEL_PID" >> $GITHUB_OUTPUT
+
+          # Save PID for cleanup
+          echo "TUNNEL_PID=$TUNNEL_PID" >> $GITHUB_ENV
+
+      - name: 🗄️ Database setup
+        run: |
+          # Update WordPress URLs
+          docker compose exec -T php wp option update home \
+            "https://${{ steps.config.outputs.domain }}" \
+            --path="/var/www/html/web/wp" || echo "WordPress not yet installed"
+
+          docker compose exec -T php wp option update siteurl \
+            "https://${{ steps.config.outputs.domain }}/wp" \
+            --path="/var/www/html/web/wp" || echo "WordPress not yet installed"
+
+          # Run database updates
+          docker compose exec -T php wp core update-db \
+            --path="/var/www/html/web/wp" || echo "WordPress not yet installed"
+
+          # Flush permalinks
+          docker compose exec -T php wp rewrite flush --hard \
+            --path="/var/www/html/web/wp" || echo "WordPress not yet installed"
+
+          # Clear caches
+          docker compose exec -T php wp cache flush \
+            --path="/var/www/html/web/wp" || echo "WordPress not yet installed"
+
+      - name: 🧪 Production health checks
+        run: |
+          # Wait for everything to stabilize
+          sleep 20
+
+          # Test homepage
+          if curl -f "https://${{ steps.config.outputs.domain }}" > /dev/null 2>&1; then
+            echo "✅ Homepage accessible"
+          else
+            echo "❌ Homepage not accessible"
+            exit 1
+          fi
+
+          # Test WordPress API
+          if curl -f "https://${{ steps.config.outputs.domain }}/wp-json/wp/v2/" > /dev/null 2>&1; then
+            echo "✅ WordPress API accessible"
+          else
+            echo "⚠️ WordPress API not accessible (may need installation)"
+          fi
+
+          # Test admin area
+          if curl -f "https://${{ steps.config.outputs.domain }}/wp/wp-admin/" > /dev/null 2>&1; then
+            echo "✅ Admin area accessible"
+          else
+            echo "⚠️ Admin area not accessible (may need installation)"
+          fi
+
+      - name: 📧 Deployment notification
+        if: success()
+        run: |
+          echo "🎉 Production deployment successful!"
+          echo ""
+          echo "🌐 Site: https://${{ steps.config.outputs.domain }}"
+          echo "🔑 Admin: https://${{ steps.config.outputs.domain }}/wp/wp-admin"
+          echo "📝 Commit: ${{ github.sha }}"
+          echo "🕐 Time: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      - name: 💾 Keep production tunnel alive
+        if: steps.config.outputs.environment == 'production'
+        run: |
+          echo "🔄 Keeping production tunnel alive..."
+          echo "Tunnel will run continuously for production environment"
+          # For production, we keep the tunnel running
+          # Monitor it with a long timeout
+          timeout 7200 tail -f tunnel.log || echo "Production tunnel monitoring completed"
+
+      - name: 🧹 Cleanup (staging only)
+        if: always() && steps.config.outputs.environment == 'staging'
+        run: |
+          # Only cleanup staging tunnels, keep production running
+          if [ ! -z "$TUNNEL_PID" ]; then
+            kill $TUNNEL_PID 2>/dev/null || true
+          fi
+          docker compose down || true

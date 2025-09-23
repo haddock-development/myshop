@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(export:*)",
+      "Bash(rm:*)",
+      "Bash(mv:*)",
+      "Bash(rmdir:*)",
+      "Bash(cp:*)",
+      "Bash(docker compose:*)",
+      "Bash(chmod:*)",
+      "Bash(make:*)",
+      "Bash(./tunnel.sh:*)",
+      "Bash(./named-tunnel.sh:*)",
+      "Bash(./wp-utils.sh:*)",
+      "Bash(git init:*)",
+      "Bash(git branch:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

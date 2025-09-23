@@ -1,0 +1,226 @@
+name: 🎯 Deploy to Staging
+
+on:
+  push:
+    branches: [ develop, staging ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+
+env:
+  STAGING_DOMAIN: ${{ secrets.STAGING_DOMAIN || 'staging.yourdomain.tld' }}
+  PRODUCTION_DOMAIN: ${{ secrets.PRODUCTION_DOMAIN || 'yourdomain.tld' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    environment:
+      name: ${{ github.event.inputs.environment || 'staging' }}
+      url: https://${{ github.event.inputs.environment == 'production' && env.PRODUCTION_DOMAIN || env.STAGING_DOMAIN }}
+
+    steps:
+      - name: 🏗️ Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Configure environment
+        id: config
+        run: |
+          if [ "${{ github.event.inputs.environment }}" = "production" ]; then
+            ENV="production"
+            DOMAIN="${{ env.PRODUCTION_DOMAIN }}"
+            TUNNEL_TOKEN="${{ secrets.PRODUCTION_TUNNEL_TOKEN }}"
+          else
+            ENV="staging"
+            DOMAIN="${{ env.STAGING_DOMAIN }}"
+            TUNNEL_TOKEN="${{ secrets.STAGING_TUNNEL_TOKEN }}"
+          fi
+
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          echo "domain=$DOMAIN" >> $GITHUB_OUTPUT
+          echo "tunnel_token=$TUNNEL_TOKEN" >> $GITHUB_OUTPUT
+
+      - name: 🛡️ Validate configuration
+        run: |
+          if [ -z "${{ steps.config.outputs.tunnel_token }}" ]; then
+            echo "❌ Missing tunnel token for ${{ steps.config.outputs.environment }}"
+            echo "Please set the following secrets:"
+            echo "- STAGING_TUNNEL_TOKEN (for staging)"
+            echo "- PRODUCTION_TUNNEL_TOKEN (for production)"
+            exit 1
+          fi
+
+          if [ -z "${{ steps.config.outputs.domain }}" ]; then
+            echo "❌ Missing domain configuration"
+            exit 1
+          fi
+
+          echo "✅ Configuration validated"
+
+      - name: 🐳 Set up Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🌍 Setup environment file
+        run: |
+          cp .env.example .env
+
+          # Configure for target environment
+          sed -i "s/WP_ENV=development/WP_ENV=${{ steps.config.outputs.environment }}/" .env
+          sed -i "s|WP_HOME=http://localhost:8080|WP_HOME=https://${{ steps.config.outputs.domain }}|" .env
+          sed -i "s|localhost:8080|${{ steps.config.outputs.domain }}|" .env
+
+          # Production-specific settings
+          if [ "${{ steps.config.outputs.environment }}" = "production" ]; then
+            echo "DISALLOW_FILE_MODS=true" >> .env
+            echo "WP_DEBUG=false" >> .env
+            echo "WP_DEBUG_LOG=false" >> .env
+          else
+            echo "WP_DEBUG=true" >> .env
+            echo "WP_DEBUG_LOG=true" >> .env
+          fi
+
+          # Add deployment info
+          echo "" >> .env
+          echo "# Deployment Info" >> .env
+          echo "DEPLOY_ENVIRONMENT=${{ steps.config.outputs.environment }}" >> .env
+          echo "DEPLOY_COMMIT=${{ github.sha }}" >> .env
+          echo "DEPLOY_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> .env
+          echo "DEPLOY_BRANCH=${{ github.ref_name }}" >> .env
+
+      - name: 🏗️ Build and test locally
+        run: |
+          # Build images
+          docker compose build
+
+          # Start services for testing
+          docker compose up -d
+
+          # Wait for services
+          sleep 30
+
+          # Test basic functionality
+          timeout 60 bash -c 'until curl -f http://localhost:8080; do sleep 2; done'
+
+          # Install dependencies
+          docker compose exec -T php composer install --no-dev --optimize-autoloader
+
+          echo "✅ Local build and test successful"
+
+      - name: 🔗 Deploy to Cloudflare Tunnel
+        run: |
+          # Install cloudflared
+          curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
+          chmod +x cloudflared
+
+          # Start named tunnel
+          ./cloudflared tunnel --no-autoupdate run --token "${{ steps.config.outputs.tunnel_token }}" > tunnel.log 2>&1 &
+          TUNNEL_PID=$!
+
+          # Wait for tunnel to establish
+          sleep 10
+
+          # Check tunnel status
+          if ! ps -p $TUNNEL_PID > /dev/null; then
+            echo "❌ Tunnel failed to start"
+            cat tunnel.log
+            exit 1
+          fi
+
+          echo "✅ Tunnel established to https://${{ steps.config.outputs.domain }}"
+
+          # Update WordPress URLs to use tunnel domain
+          docker compose exec -T php wp option update home \
+            "https://${{ steps.config.outputs.domain }}" \
+            --path="/var/www/html/web/wp" || echo "WordPress not yet installed"
+
+          docker compose exec -T php wp option update siteurl \
+            "https://${{ steps.config.outputs.domain }}/wp" \
+            --path="/var/www/html/web/wp" || echo "WordPress not yet installed"
+
+          # Save PID for cleanup
+          echo "TUNNEL_PID=$TUNNEL_PID" >> $GITHUB_ENV
+
+      - name: 🔄 Database migration & updates
+        run: |
+          # Run WordPress core updates
+          docker compose exec -T php wp core update-db --path="/var/www/html/web/wp" || true
+
+          # Flush rewrite rules
+          docker compose exec -T php wp rewrite flush --hard --path="/var/www/html/web/wp" || true
+
+          # Clear caches
+          docker compose exec -T php wp cache flush --path="/var/www/html/web/wp" || true
+
+          echo "✅ Database updates completed"
+
+      - name: 🧪 Post-deployment tests
+        run: |
+          # Wait a moment for everything to stabilize
+          sleep 10
+
+          # Test homepage
+          curl -f "https://${{ steps.config.outputs.domain }}" > /dev/null
+          echo "✅ Homepage accessible"
+
+          # Test admin area
+          curl -f "https://${{ steps.config.outputs.domain }}/wp/wp-admin/" > /dev/null
+          echo "✅ Admin accessible"
+
+          # Test WordPress API
+          curl -f "https://${{ steps.config.outputs.domain }}/wp-json/wp/v2/" > /dev/null
+          echo "✅ WordPress API accessible"
+
+          # Test WooCommerce if available
+          if curl -f "https://${{ steps.config.outputs.domain }}/wp-json/wc/v3/" > /dev/null 2>&1; then
+            echo "✅ WooCommerce API accessible"
+          fi
+
+      - name: 📊 Deployment summary
+        run: |
+          echo "## 🚀 Deployment Summary"
+          echo ""
+          echo "**Environment:** ${{ steps.config.outputs.environment }}"
+          echo "**Domain:** https://${{ steps.config.outputs.domain }}"
+          echo "**Commit:** ${{ github.sha }}"
+          echo "**Branch:** ${{ github.ref_name }}"
+          echo "**Date:** $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo ""
+          echo "### 🔗 URLs"
+          echo "- **Shop:** https://${{ steps.config.outputs.domain }}"
+          echo "- **Admin:** https://${{ steps.config.outputs.domain }}/wp/wp-admin"
+          echo ""
+          echo "✅ Deployment completed successfully!"
+
+      - name: 📢 Notify deployment
+        if: success()
+        run: |
+          echo "🎉 Deployment to ${{ steps.config.outputs.environment }} completed successfully!"
+
+      - name: 🔍 Keep tunnel alive (staging only)
+        if: steps.config.outputs.environment == 'staging'
+        run: |
+          echo "Keeping staging tunnel alive..."
+          # For staging, keep tunnel running
+          # In production, tunnel should run independently
+          sleep 300  # Keep alive for 5 minutes for validation
+
+      - name: 🧹 Cleanup
+        if: always()
+        run: |
+          # For staging, we might want to keep tunnel running
+          # For production, tunnel should be managed separately
+          if [ "${{ steps.config.outputs.environment }}" != "production" ]; then
+            if [ ! -z "$TUNNEL_PID" ]; then
+              kill $TUNNEL_PID 2>/dev/null || true
+            fi
+          fi
+
+          # Stop local Docker services
+          docker compose down || true
