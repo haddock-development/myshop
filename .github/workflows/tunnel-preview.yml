@@ -173,6 +173,14 @@ jobs:
           docker compose -f docker-compose.ci.yml run --rm -T php wp option update siteurl \
             "${{ steps.tunnel.outputs.url }}/wp" --path="/var/www/html/web/wp"
 
+          # Activate custom theme
+          docker compose -f docker-compose.ci.yml run --rm -T php wp theme activate myshop-theme \
+            --path="/var/www/html/web/wp"
+
+          # Flush permalinks for pretty URLs
+          docker compose -f docker-compose.ci.yml run --rm -T php wp rewrite flush --hard \
+            --path="/var/www/html/web/wp"
+
       - name: 🧪 Run basic tests
         run: |
           # Test homepage

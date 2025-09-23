@@ -40,12 +40,36 @@ print_env() {
     echo -e "${PURPLE}🌍 $1${NC}"
 }
 
+resolve_docker_bin() {
+    if [ -n "${DOCKER_BIN:-}" ] && [ -x "$DOCKER_BIN" ]; then
+        echo "$DOCKER_BIN"
+        return
+    fi
+
+    if command -v docker >/dev/null 2>&1; then
+        command -v docker
+        return
+    fi
+
+    local mac_docker="/Applications/Docker.app/Contents/Resources/bin/docker"
+    if [ -x "$mac_docker" ]; then
+        echo "$mac_docker"
+        return
+    fi
+
+    print_error "Docker CLI not found. Install Docker Desktop and ensure the CLI is available."
+    exit 1
+}
+
+DOCKER_BIN=$(resolve_docker_bin)
+DOCKER_COMPOSE_CMD="$DOCKER_BIN compose"
+
 # Check prerequisites
 check_prerequisites() {
     local missing=()
 
     # Check for required commands
-    command -v docker >/dev/null 2>&1 || missing+=("docker")
+    [ -x "$DOCKER_BIN" ] || missing+=("docker")
     command -v git >/dev/null 2>&1 || missing+=("git")
 
     if [ ${#missing[@]} -ne 0 ]; then
@@ -54,7 +78,7 @@ check_prerequisites() {
     fi
 
     # Check if Docker is running
-    if ! docker info >/dev/null 2>&1; then
+    if ! $DOCKER_BIN info >/dev/null 2>&1; then
         print_error "Docker is not running"
         return 1
     fi
@@ -81,7 +105,7 @@ deploy_local() {
 
     # Start Docker services
     print_status "Starting Docker services..."
-    docker compose up -d
+    $DOCKER_COMPOSE_CMD up -d
 
     # Wait for services
     print_status "Waiting for services to be ready..."
@@ -89,14 +113,14 @@ deploy_local() {
 
     # Install/update dependencies
     print_status "Installing Composer dependencies..."
-    docker compose exec php composer install
+    $DOCKER_COMPOSE_CMD exec php composer install
 
     # Update WordPress if needed
     print_status "Checking WordPress installation..."
-    if docker compose exec php wp core is-installed --path="/var/www/html/web/wp" 2>/dev/null; then
+    if $DOCKER_COMPOSE_CMD exec php wp core is-installed --path="/var/www/html/web/wp" 2>/dev/null; then
         print_status "Updating WordPress core..."
-        docker compose exec php wp core update-db --path="/var/www/html/web/wp"
-        docker compose exec php wp rewrite flush --hard --path="/var/www/html/web/wp"
+        $DOCKER_COMPOSE_CMD exec php wp core update-db --path="/var/www/html/web/wp"
+        $DOCKER_COMPOSE_CMD exec php wp rewrite flush --hard --path="/var/www/html/web/wp"
     else
         print_warning "WordPress not installed. Run initial setup first."
     fi
@@ -116,7 +140,7 @@ deploy_tunnel() {
     print_header "Deploying with Cloudflare Tunnel"
 
     # Ensure local services are running
-    if ! docker compose ps | grep -q "Up"; then
+    if ! $DOCKER_COMPOSE_CMD ps | grep -q "Up"; then
         print_status "Starting local services first..."
         deploy_local
     fi
@@ -230,7 +254,7 @@ show_status() {
     # Check local Docker services
     echo ""
     print_status "Local Services:"
-    if docker compose ps 2>/dev/null | grep -q "Up"; then
+    if $DOCKER_COMPOSE_CMD ps 2>/dev/null | grep -q "Up"; then
         print_success "Docker services are running"
 
         # Show service URLs

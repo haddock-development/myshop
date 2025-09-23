@@ -1,0 +1,39 @@
+name: 🔍 CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+
+jobs:
+  lint:
+    name: Composer & Pint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🏗️ Checkout
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: intl, mbstring
+          coverage: none
+
+      - name: ♻️ Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ hashFiles('composer.lock') }}
+          restore-keys: |
+            composer-
+
+      - name: 📦 Install dependencies
+        run: composer install --no-interaction --prefer-dist --ansi
+
+      - name: ✅ Composer validate
+        run: composer validate --no-interaction --ansi
+
+      - name: 🧹 Laravel Pint (lint)
+        run: composer run lint

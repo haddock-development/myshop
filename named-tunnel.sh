@@ -4,8 +4,6 @@
 # Manages stable subdomain tunnels (e.g., https://dev.yourdomain.tld)
 # Usage: ./named-tunnel.sh [setup|start|stop|status|set-domain|reset-local|logs|help]
 
-DOCKER_COMPOSE_CMD="docker compose"
-WPCLI_CMD="$DOCKER_COMPOSE_CMD run --rm wpcli"
 TUNNEL_CONTAINER_NAME="cloudflared"
 CONFIG_FILE=".tunnel-config"
 
@@ -32,6 +30,36 @@ print_warning() {
 print_error() {
     echo -e "${RED}❌ $1${NC}"
 }
+
+resolve_docker_bin() {
+    if [ -n "${DOCKER_BIN:-}" ] && [ -x "$DOCKER_BIN" ]; then
+        echo "$DOCKER_BIN"
+        return
+    fi
+
+    if command -v docker >/dev/null 2>&1; then
+        command -v docker
+        return
+    fi
+
+    local mac_docker="/Applications/Docker.app/Contents/Resources/bin/docker"
+    if [ -x "$mac_docker" ]; then
+        echo "$mac_docker"
+        return
+    fi
+
+    print_error "Docker CLI not found. Install Docker Desktop and ensure the CLI is available."
+    exit 1
+}
+
+DOCKER_BIN=$(resolve_docker_bin)
+DOCKER_DIR=$(dirname "$DOCKER_BIN")
+case ":$PATH:" in
+    *":$DOCKER_DIR:"*) ;;
+    *) PATH="$DOCKER_DIR:$PATH" ;;
+esac
+DOCKER_COMPOSE_CMD="$DOCKER_BIN compose"
+WPCLI_CMD="$DOCKER_COMPOSE_CMD run --rm wpcli"
 
 print_header() {
     echo -e "${CYAN}🚀 $1${NC}"
@@ -108,14 +136,14 @@ start_tunnel() {
     fi
 
     # Check if container already exists
-    if docker ps -a | grep -q "$TUNNEL_CONTAINER_NAME"; then
+    if $DOCKER_BIN ps -a | grep -q "$TUNNEL_CONTAINER_NAME"; then
         print_status "Removing existing tunnel container..."
-        docker rm -f "$TUNNEL_CONTAINER_NAME" > /dev/null 2>&1
+        $DOCKER_BIN rm -f "$TUNNEL_CONTAINER_NAME" > /dev/null 2>&1
     fi
 
     print_status "Starting named tunnel container..."
 
-    docker run -d \
+    $DOCKER_BIN run -d \
         --name "$TUNNEL_CONTAINER_NAME" \
         --restart unless-stopped \
         cloudflare/cloudflared:latest \
@@ -138,8 +166,8 @@ start_tunnel() {
 stop_tunnel() {
     print_status "Stopping named tunnel..."
 
-    if docker ps | grep -q "$TUNNEL_CONTAINER_NAME"; then
-        docker stop "$TUNNEL_CONTAINER_NAME" > /dev/null 2>&1
+    if $DOCKER_BIN ps | grep -q "$TUNNEL_CONTAINER_NAME"; then
+        $DOCKER_BIN stop "$TUNNEL_CONTAINER_NAME" > /dev/null 2>&1
         print_success "Tunnel stopped"
     else
         print_warning "No tunnel container is running"
@@ -149,7 +177,7 @@ stop_tunnel() {
 status_tunnel() {
     load_config
 
-    if docker ps | grep -q "$TUNNEL_CONTAINER_NAME"; then
+    if $DOCKER_BIN ps | grep -q "$TUNNEL_CONTAINER_NAME"; then
         print_success "Named tunnel is running"
         if [ ! -z "$TUNNEL_DOMAIN" ]; then
             echo "🌐 Domain: https://$TUNNEL_DOMAIN"
@@ -217,9 +245,9 @@ reset_local() {
 }
 
 show_logs() {
-    if docker ps | grep -q "$TUNNEL_CONTAINER_NAME"; then
+    if $DOCKER_BIN ps | grep -q "$TUNNEL_CONTAINER_NAME"; then
         print_status "Showing tunnel logs (Ctrl+C to exit)..."
-        docker logs -f "$TUNNEL_CONTAINER_NAME"
+        $DOCKER_BIN logs -f "$TUNNEL_CONTAINER_NAME"
     else
         print_error "Tunnel container is not running"
         exit 1
@@ -232,7 +260,7 @@ troubleshoot() {
 
     # Check Docker
     print_status "Checking Docker status..."
-    if docker ps > /dev/null 2>&1; then
+    if $DOCKER_BIN ps > /dev/null 2>&1; then
         print_success "Docker is running"
     else
         print_error "Docker is not running or accessible"
@@ -241,21 +269,21 @@ troubleshoot() {
 
     # Check WordPress containers
     print_status "Checking WordPress containers..."
-    if docker compose ps | grep -q "Up"; then
+    if $DOCKER_COMPOSE_CMD ps | grep -q "Up"; then
         print_success "WordPress containers are running"
     else
         print_warning "Some WordPress containers may not be running"
-        echo "Run: docker compose up -d"
+        echo "Run: $DOCKER_COMPOSE_CMD up -d"
     fi
 
     # Check tunnel container
     print_status "Checking tunnel container..."
-    if docker ps | grep -q "$TUNNEL_CONTAINER_NAME"; then
+    if $DOCKER_BIN ps | grep -q "$TUNNEL_CONTAINER_NAME"; then
         print_success "Tunnel container is running"
 
         # Show recent logs
         print_status "Recent tunnel logs:"
-        docker logs --tail 10 "$TUNNEL_CONTAINER_NAME"
+        $DOCKER_BIN logs --tail 10 "$TUNNEL_CONTAINER_NAME"
     else
         print_warning "Tunnel container is not running"
     fi

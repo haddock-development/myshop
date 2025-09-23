@@ -4,8 +4,6 @@
 # Unterstützt: Quick Tunnels, Named Tunnels, Multiple Environments, Git Worktrees
 # Usage: ./tunnel-manager.sh [command] [options]
 
-DOCKER_COMPOSE_CMD="docker compose"
-WPCLI_CMD="$DOCKER_COMPOSE_CMD run --rm wpcli"
 CONFIG_DIR=".tunnel-configs"
 DEFAULT_CONFIG="$CONFIG_DIR/default.conf"
 WORKTREE_CONFIG="$CONFIG_DIR/$(basename $(pwd)).conf"
@@ -34,6 +32,36 @@ print_warning() {
 print_error() {
     echo -e "${RED}❌ $1${NC}"
 }
+
+resolve_docker_bin() {
+    if [ -n "${DOCKER_BIN:-}" ] && [ -x "$DOCKER_BIN" ]; then
+        echo "$DOCKER_BIN"
+        return
+    fi
+
+    if command -v docker >/dev/null 2>&1; then
+        command -v docker
+        return
+    fi
+
+    local mac_docker="/Applications/Docker.app/Contents/Resources/bin/docker"
+    if [ -x "$mac_docker" ]; then
+        echo "$mac_docker"
+        return
+    fi
+
+    print_error "Docker CLI not found. Install Docker Desktop and ensure the CLI is available."
+    exit 1
+}
+
+DOCKER_BIN=$(resolve_docker_bin)
+DOCKER_DIR=$(dirname "$DOCKER_BIN")
+case ":$PATH:" in
+    *":$DOCKER_DIR:"*) ;;
+    *) PATH="$DOCKER_DIR:$PATH" ;;
+esac
+DOCKER_COMPOSE_CMD="$DOCKER_BIN compose"
+WPCLI_CMD="$DOCKER_COMPOSE_CMD run --rm wpcli"
 
 print_header() {
     echo -e "${CYAN}🚀 $1${NC}"
@@ -235,11 +263,11 @@ start_quick_tunnel() {
     local container_name="tunnel-$(basename $(pwd))"
 
     # Stop existing tunnel
-    docker stop "$container_name" 2>/dev/null || true
-    docker rm "$container_name" 2>/dev/null || true
+    $DOCKER_BIN stop "$container_name" 2>/dev/null || true
+    $DOCKER_BIN rm "$container_name" 2>/dev/null || true
 
     # Start new tunnel
-    docker run -d \
+    $DOCKER_BIN run -d \
         --name "$container_name" \
         cloudflare/cloudflared:latest \
         tunnel --no-autoupdate --url "http://host.docker.internal:$LOCAL_PORT"
@@ -247,7 +275,7 @@ start_quick_tunnel() {
     sleep 3
 
     # Get tunnel URL
-    local tunnel_url=$(docker logs "$container_name" 2>&1 | grep -o 'https://.*\.trycloudflare\.com' | head -1)
+    local tunnel_url=$($DOCKER_BIN logs "$container_name" 2>&1 | grep -o 'https://.*\.trycloudflare\.com' | head -1)
 
     if [ ! -z "$tunnel_url" ]; then
         print_success "Quick tunnel started!"
@@ -262,7 +290,7 @@ start_quick_tunnel() {
         echo "CURRENT_TUNNEL_URL=\"$tunnel_url\"" >> "$WORKTREE_CONFIG"
     else
         print_error "Failed to get tunnel URL"
-        docker logs "$container_name"
+        $DOCKER_BIN logs "$container_name"
     fi
 }
 
@@ -278,11 +306,11 @@ start_named_tunnel() {
     local container_name="named-tunnel-$(basename $(pwd))"
 
     # Stop existing tunnel
-    docker stop "$container_name" 2>/dev/null || true
-    docker rm "$container_name" 2>/dev/null || true
+    $DOCKER_BIN stop "$container_name" 2>/dev/null || true
+    $DOCKER_BIN rm "$container_name" 2>/dev/null || true
 
     # Start named tunnel
-    docker run -d \
+    $DOCKER_BIN run -d \
         --name "$container_name" \
         --restart unless-stopped \
         cloudflare/cloudflared:latest \
@@ -308,10 +336,10 @@ stop_tunnel() {
 
     print_status "Stopping tunnels for $(basename $(pwd))..."
 
-    docker stop "$container_name" 2>/dev/null || true
-    docker rm "$container_name" 2>/dev/null || true
-    docker stop "$named_container" 2>/dev/null || true
-    docker rm "$named_container" 2>/dev/null || true
+    $DOCKER_BIN stop "$container_name" 2>/dev/null || true
+    $DOCKER_BIN rm "$container_name" 2>/dev/null || true
+    $DOCKER_BIN stop "$named_container" 2>/dev/null || true
+    $DOCKER_BIN rm "$named_container" 2>/dev/null || true
 
     # Reset WordPress URLs to local
     set_wp_urls "http://localhost:$LOCAL_PORT"
@@ -363,16 +391,16 @@ show_status() {
     local named_container="named-tunnel-$(basename $(pwd))"
 
     # Check quick tunnel
-    if docker ps | grep -q "$container_name"; then
+    if $DOCKER_BIN ps | grep -q "$container_name"; then
         print_success "Quick tunnel is running"
-        local tunnel_url=$(docker logs "$container_name" 2>&1 | grep -o 'https://.*\.trycloudflare\.com' | head -1)
+        local tunnel_url=$($DOCKER_BIN logs "$container_name" 2>&1 | grep -o 'https://.*\.trycloudflare\.com' | head -1)
         if [ ! -z "$tunnel_url" ]; then
             echo "🌐 URL: $tunnel_url"
         fi
     fi
 
     # Check named tunnel
-    if docker ps | grep -q "$named_container"; then
+    if $DOCKER_BIN ps | grep -q "$named_container"; then
         load_config
         print_success "Named tunnel is running"
         echo "🌐 Domain: https://$TUNNEL_DOMAIN"

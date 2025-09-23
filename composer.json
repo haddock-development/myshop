@@ -40,7 +40,11 @@
     "roots/wordpress": "6.8.2",
     "roots/wp-config": "1.0.0",
     "wpackagist-theme/twentytwentyfive": "^1.0",
-    "wpackagist-plugin/woocommerce": "^10.2"
+    "wpackagist-plugin/woocommerce": "^10.2",
+    "wpackagist-plugin/woocommerce-germanized": "*",
+    "wpackagist-plugin/woocommerce-gateway-stripe": "^9.9",
+    "wpackagist-plugin/woocommerce-paypal-payments": "*",
+    "wpackagist-plugin/wp-mail-logging": "*"
   },
   "require-dev": {
     "roave/security-advisories": "dev-latest",

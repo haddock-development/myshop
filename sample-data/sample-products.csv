@@ -1,0 +1,9 @@
+name,type,regular_price,sale_price,description,short_description,stock_quantity,weight,length,width,height,categories,tags,images
+"Premium T-Shirt",simple,29.99,24.99,"Hochwertiges Premium T-Shirt aus 100% Bio-Baumwolle. Perfekt für den Alltag und besondere Anlässe.","Nachhaltiges T-Shirt aus Bio-Baumwolle",50,0.2,30,25,2,"Kleidung,T-Shirts","Bio,Premium,Nachhaltig",""
+"Gaming Maus",simple,89.99,,"Professionelle Gaming-Maus mit RGB-Beleuchtung und 12 programmierbaren Tasten.","High-End Gaming-Maus für Profis",25,0.15,12,7,4,"Elektronik,Gaming","Gaming,RGB,Wireless",""
+"Kaffeetasse Set",simple,19.99,14.99,"Elegantes Kaffeetassen-Set aus Porzellan. 4 Tassen mit passenden Untertassen.","Porzellan Kaffeetassen Set - 4-teilig",100,1.2,25,25,15,"Haushalt,Küche","Porzellan,Set,Kaffee",""
+"Yoga Matte Premium",simple,49.99,39.99,"Rutschfeste Yoga-Matte aus natürlichem Kautschuk. Ideal für alle Yoga-Arten.","Eco-friendly Yoga Matte",30,1.8,180,60,0.6,"Sport,Yoga","Yoga,Eco,Fitness",""
+"Digital E-Book",simple,9.99,,"Umfassendes E-Book über digitales Marketing. Sofortiger Download nach Kauf.","Marketing E-Book - Digitaler Download",,,,,"Bücher,Digital","E-Book,Marketing,Digital",""
+"Bluetooth Kopfhörer",simple,159.99,129.99,"Kabellose Over-Ear Kopfhörer mit Active Noise Cancelling und 30h Akkulaufzeit.","Premium Bluetooth Kopfhörer mit ANC",15,0.25,20,18,8,"Elektronik,Audio","Bluetooth,ANC,Premium",""
+"Bio Honig 500g",simple,12.99,,"Naturbelassener Bio-Honig aus lokaler Imkerei. Cremige Konsistenz und milder Geschmack.","Bio Honig aus regionaler Imkerei",75,0.5,8,8,12,"Lebensmittel,Bio","Bio,Honig,Regional",""
+"Fitness Tracker",simple,199.99,179.99,"Smartwatch mit Fitness-Tracking, Herzfrequenzmesser und GPS. Wasserdicht bis 50m.","Fitness Smartwatch mit GPS",20,0.05,4,4,1,"Elektronik,Fitness","Fitness,GPS,Smartwatch",""

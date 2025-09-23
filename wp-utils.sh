@@ -3,8 +3,6 @@
 # WordPress Utility Scripts for Bedrock
 # Useful helper commands for development and troubleshooting
 
-DOCKER_COMPOSE_CMD="docker compose"
-WPCLI_CMD="$DOCKER_COMPOSE_CMD run --rm wpcli"
 
 # Colors for output
 RED='\033[0;31m'
@@ -28,6 +26,36 @@ print_warning() {
 print_error() {
     echo -e "${RED}❌ $1${NC}"
 }
+
+resolve_docker_bin() {
+    if [ -n "${DOCKER_BIN:-}" ] && [ -x "$DOCKER_BIN" ]; then
+        echo "$DOCKER_BIN"
+        return
+    fi
+
+    if command -v docker >/dev/null 2>&1; then
+        command -v docker
+        return
+    fi
+
+    local mac_docker="/Applications/Docker.app/Contents/Resources/bin/docker"
+    if [ -x "$mac_docker" ]; then
+        echo "$mac_docker"
+        return
+    fi
+
+    print_error "Docker CLI not found. Install Docker Desktop and ensure the CLI is available."
+    exit 1
+}
+
+DOCKER_BIN=$(resolve_docker_bin)
+DOCKER_DIR=$(dirname "$DOCKER_BIN")
+case ":$PATH:" in
+    *":$DOCKER_DIR:"*) ;;
+    *) PATH="$DOCKER_DIR:$PATH" ;;
+esac
+DOCKER_COMPOSE_CMD="$DOCKER_BIN compose"
+WPCLI_CMD="$DOCKER_COMPOSE_CMD run --rm wpcli"
 
 # Show current WordPress URLs
 show_urls() {
@@ -142,9 +170,9 @@ update_admin() {
 # Fix file permissions
 fix_permissions() {
     print_status "Fixing file permissions..."
-    docker compose exec php chown -R www-data:www-data /var/www/html > /dev/null 2>&1
-    docker compose exec php chmod -R 755 /var/www/html > /dev/null 2>&1
-    docker compose exec php chmod -R 775 /var/www/html/web/app/uploads > /dev/null 2>&1
+    $DOCKER_COMPOSE_CMD exec php chown -R www-data:www-data /var/www/html > /dev/null 2>&1
+    $DOCKER_COMPOSE_CMD exec php chmod -R 755 /var/www/html > /dev/null 2>&1
+    $DOCKER_COMPOSE_CMD exec php chmod -R 775 /var/www/html/web/app/uploads > /dev/null 2>&1
     print_success "File permissions fixed"
 }
 

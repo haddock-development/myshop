@@ -31,6 +31,7 @@ wp-cli.local.yml
 # Tunnel Configuration
 .tunnel-config
 .tunnel-configs/
+.ngrok-configs/
 
 # Docker Overrides (environment-specific)
 docker-compose.override.yml
@@ -40,6 +41,9 @@ docker-compose.ci.yml
 # Deployment
 tunnel.log
 cloudflared
+ngrok.log
+ngrok.pid
+ngrok
 
 # Git Worktrees (auto-generated)
 ../myshop-*

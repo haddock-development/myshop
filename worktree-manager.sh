@@ -8,6 +8,17 @@ BASE_DIR=$(pwd)
 WORKTREES_DIR="../"
 BASE_PORT=8080
 
+ensure_remote() {
+    if ! git remote >/dev/null 2>&1; then
+        print_warning "Keine Git-Remotes konfiguriert. Füge einen hinzu (z. B. mit bin/setup-github.sh) bevor du Worktrees für kollaboratives Arbeiten nutzt."
+    else
+        local remotes=$(git remote)
+        if [ -z "$remotes" ]; then
+            print_warning "Keine Git-Remotes konfiguriert. Füge einen hinzu (z. B. mit bin/setup-github.sh)."
+        fi
+    fi
+}
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -31,6 +42,35 @@ print_warning() {
 print_error() {
     echo -e "${RED}❌ $1${NC}"
 }
+
+resolve_docker_bin() {
+    if [ -n "${DOCKER_BIN:-}" ] && [ -x "$DOCKER_BIN" ]; then
+        echo "$DOCKER_BIN"
+        return
+    fi
+
+    if command -v docker >/dev/null 2>&1; then
+        command -v docker
+        return
+    fi
+
+    local mac_docker="/Applications/Docker.app/Contents/Resources/bin/docker"
+    if [ -x "$mac_docker" ]; then
+        echo "$mac_docker"
+        return
+    fi
+
+    print_error "Docker CLI not found. Install Docker Desktop and ensure the CLI is available."
+    exit 1
+}
+
+DOCKER_BIN=$(resolve_docker_bin)
+DOCKER_DIR=$(dirname "$DOCKER_BIN")
+case ":$PATH:" in
+    *":$DOCKER_DIR:"*) ;;
+    *) PATH="$DOCKER_DIR:$PATH" ;;
+esac
+DOCKER_COMPOSE_CMD="$DOCKER_BIN compose"
 
 print_header() {
     echo -e "${CYAN}🌳 $1${NC}"
@@ -81,6 +121,8 @@ create_worktree() {
         print_error "Usage: create <branch-name> [worktree-name]"
         return 1
     fi
+
+    ensure_remote
 
     if [ -z "$worktree_name" ]; then
         worktree_name="myshop-$branch_name"
@@ -135,7 +177,7 @@ create_worktree() {
     echo ""
     echo "Next steps:"
     echo "  cd $worktree_path"
-    echo "  docker compose up -d"
+    echo "  $DOCKER_COMPOSE_CMD up -d"
     echo "  ./tunnel-manager.sh start"
 
     cd "$BASE_DIR"
@@ -169,7 +211,7 @@ list_worktrees() {
             # Check if Docker is running
             if [ -f "$path/docker-compose.yml" ]; then
                 cd "$path" 2>/dev/null
-                if docker compose ps 2>/dev/null | grep -q "Up"; then
+                if $DOCKER_COMPOSE_CMD ps 2>/dev/null | grep -q "Up"; then
                     tunnel_status="✅"
                 fi
                 cd "$BASE_DIR"
@@ -210,7 +252,7 @@ start_worktree() {
         # Start current worktree
         if [ -f "docker-compose.yml" ]; then
             print_status "Starting services..."
-            docker compose up -d
+            $DOCKER_COMPOSE_CMD up -d
             ./tunnel-manager.sh start
         else
             print_error "No docker-compose.yml found. Are you in a worktree?"
@@ -227,7 +269,7 @@ start_worktree() {
 
     print_status "Starting services for: $worktree_name"
     cd "$worktree_path"
-    docker compose up -d
+    $DOCKER_COMPOSE_CMD up -d
     ./tunnel-manager.sh start
     cd "$BASE_DIR"
 }
@@ -241,7 +283,7 @@ stop_worktree() {
         if [ -f "docker-compose.yml" ]; then
             print_status "Stopping services..."
             ./tunnel-manager.sh stop
-            docker compose down
+            $DOCKER_COMPOSE_CMD down
         fi
         return
     fi
@@ -256,7 +298,7 @@ stop_worktree() {
     print_status "Stopping services for: $worktree_name"
     cd "$worktree_path"
     ./tunnel-manager.sh stop
-    docker compose down
+    $DOCKER_COMPOSE_CMD down
     cd "$BASE_DIR"
 }
 
@@ -329,7 +371,7 @@ status_all() {
             cd "$path" 2>/dev/null
 
             # Check Docker status
-            if docker compose ps 2>/dev/null | grep -q "Up"; then
+            if $DOCKER_COMPOSE_CMD ps 2>/dev/null | grep -q "Up"; then
                 echo "   🐳 Docker: Running"
 
                 # Get web port

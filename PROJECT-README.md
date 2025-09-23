@@ -198,6 +198,38 @@ docker system prune                          # Docker aufräumen
 
 ### Öffentliche Tunnels
 - **Starke Passwörter** verwenden
+
+## 🧭 GitHub & Worktree-Flow
+
+### GitHub Remote verbinden
+1. Repository in GitHub anlegen (leer, ohne README).  
+2. Im Projekt ausführen:
+   ```bash
+   ./bin/setup-github.sh origin https://github.com/<account>/<repo>.git
+   ```
+   Der Helper fügt den Remote hinzu, holt Refs und pusht den aktuellen Branch.
+3. Secrets für Workflows setzen (Repo → Settings → Secrets & variables → Actions):
+   - `CLOUDFLARE_TUNNEL_TOKEN` *(optional, falls du Named Tunnels in CI nutzen willst)*
+   - `CF_API_TOKEN` / `CF_ACCOUNT_ID` nur nötig, wenn du später automatisierte Deployments zu Cloudflare anstößt.
+
+### GitHub Actions
+- `.github/workflows/ci.yml` lintet Composer + Laravel Pint auf jedem Push und Pull Request.  
+  👉 Voraussetzung: `composer install` muss laufen – falls neue Dev-Abhängigkeiten hinzukommen, `composer update` + `composer.lock` committen.
+- `.github/workflows/tunnel-preview.yml` baut eine vollständige Preview-Instanz (Docker + Cloudflare Quick Tunnel).  
+  👉 Der Workflow aktiviert automatisch das Theme `myshop-theme`.
+
+### Worktrees nutzen
+Die mitgelieferte `worktree-manager.sh` automatisiert parallele Branch-Umgebungen:
+
+```bash
+./worktree-manager.sh create feature/awesome awesome-demo   # legt neuen Worktree an
+./worktree-manager.sh list                                  # Überblick
+./worktree-manager.sh start awesome-demo                    # startet Docker + Tunnel
+```
+
+> Hinweis: Das Script warnt, falls kein Git-Remote vorhanden ist. Richte vor der kollaborativen Arbeit unbedingt `origin` ein (siehe oben), damit Worktree-Branches sauber gepusht werden können.
+
+Für CI/Preview ist es sinnvoll, Branches über Worktrees zu verwalten – du kannst gleichzeitig mehrere Demos laufen lassen (z. B. `myshop-main`, `myshop-feature-x`).
 - **Tunnel nur bei Bedarf** aktivieren
 - **URLs nach Tests zurücksetzen**
 - **Cloudflare Access** für geschützte Bereiche
