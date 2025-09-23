@@ -30,4 +30,4 @@ default_branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo main)
 echo "Pushing current branch (${default_branch})" >&2
 git push -u "$REMOTE_NAME" "${default_branch}"
 
-echo "Done. Remember to set GitHub secrets for workflows (see PROJECT-README)."
+echo "Done. Remember to set GitHub secrets for workflows (see README.md)."

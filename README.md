@@ -1,61 +1,121 @@
-<p align="center">
-  <a href="https://roots.io/bedrock/">
-    <img alt="Bedrock" src="https://cdn.roots.io/app/uploads/logo-bedrock.svg" height="100">
-  </a>
-</p>
+# MyShop WordPress Stack
 
-<p align="center">
-  <a href="https://packagist.org/packages/roots/bedrock">
-    <img alt="Packagist Installs" src="https://img.shields.io/packagist/dt/roots/bedrock?label=projects%20created&colorB=2b3072&colorA=525ddc&style=flat-square">
-  </a>
+Modern WooCommerce-Umgebung auf Basis von Bedrock, Docker und GitHub-Automatisierung. Das Setup vereint lokale Entwicklung, öffentliche Tunnel, Zahlungsanbieter (Stripe, Google Pay) und eine optionale AP2-Agent-Schnittstelle.
 
-  <a href="https://packagist.org/packages/roots/wordpress">
-    <img alt="roots/wordpress Packagist Downloads" src="https://img.shields.io/packagist/dt/roots/wordpress?label=roots%2Fwordpress%20downloads&logo=roots&logoColor=white&colorB=2b3072&colorA=525ddc&style=flat-square">
-  </a>
+## Features
+- **Bedrock + WooCommerce**: Strukturierte WordPress-Installation mit Composer-abhängigem Core und Plugins.
+- **Docker Desktop**: PHP-FPM, Nginx, MySQL, MailHog – Start per `docker compose up -d`.
+- **Tunnel-Tooling**: Quick Tunnel (`tunnel.sh`) und Named Tunnel (`named-tunnel.sh`) für stabile Subdomains.
+- **Stripe & Google Pay**: Env-basierte Konfiguration via MU-Plugin; PaymentIntents direkt aus WordPress heraus.
+- **Agent Payments Protocol (AP2)**: REST-Gateway für agentengetriebene Mandate (siehe Abschnitt _AP2_).
+- **Git Worktrees & CI**: Worktree-Skripte, Makefile-Shortcuts, GitHub Actions für Deployments & Releases.
 
-  <img src="https://img.shields.io/badge/dynamic/json.svg?url=https://raw.githubusercontent.com/roots/bedrock/master/composer.json&label=wordpress&logo=roots&logoColor=white&query=$.require[%22roots/wordpress%22]&colorB=2b3072&colorA=525ddc&style=flat-square">
+## Quick Start (Local)
+```bash
+# Containers starten
+docker compose up -d
 
-  <a href="https://github.com/roots/bedrock/actions/workflows/ci.yml">
-    <img alt="Build Status" src="https://img.shields.io/github/actions/workflow/status/roots/bedrock/ci.yml?branch=master&logo=github&label=CI&style=flat-square">
-  </a>
+# Shop öffnen
+open http://localhost:8080
+open http://localhost:8080/wp/wp-admin  # admin / admin
+```
 
-  <a href="https://twitter.com/rootswp">
-    <img alt="Follow Roots" src="https://img.shields.io/badge/follow%20@rootswp-1da1f2?logo=twitter&logoColor=ffffff&message=&style=flat-square">
-  </a>
-</p>
+### Nützliche Make Targets
+```bash
+make help              # Übersicht aller Befehle
+make deploy-local      # Lokalen Stack initialisieren
+make status            # Docker/Deployment-Status prüfen
+```
 
-<p align="center">WordPress boilerplate with Composer, easier configuration, and an improved folder structure</p>
+## Öffentlicher Zugriff
+### Cloudflare Quick Tunnel
+```bash
+./tunnel.sh start   # Startet Tunnel und setzt URLs automatisch
+./tunnel.sh status  # Status anzeigen
+./tunnel.sh stop    # Tunnel beenden & URLs zurücksetzen
+```
 
-<p align="center">
-  <a href="https://roots.io/bedrock/">Website</a> &nbsp;&nbsp; <a href="https://roots.io/bedrock/docs/installation/">Documentation</a> &nbsp;&nbsp; <a href="https://github.com/roots/bedrock/releases">Releases</a> &nbsp;&nbsp; <a href="https://discourse.roots.io/">Community</a>
-</p>
+Alternativ: `make tunnel`, `make url-set URL=...`, `make url-local`.
 
-## Sponsors
+### Named Tunnel (stabile Subdomain)
+```bash
+./named-tunnel.sh setup       # Einmaliges Setup (Token, Domain)
+./named-tunnel.sh start       # Tunnel starten
+./named-tunnel.sh set-domain  # WooCommerce auf Subdomain umstellen
+./named-tunnel.sh reset-local # Zurück zu localhost
+```
 
-Bedrock is an open source project and completely free to use. If you've benefited from our projects and would like to support our future endeavors, please consider [sponsoring Roots](https://github.com/sponsors/roots).
+Weitere Diagnose: `./named-tunnel.sh status`, `./named-tunnel.sh logs`, `./named-tunnel.sh troubleshoot`.
 
-<div align="center">
-<a href="https://carrot.com/"><img src="https://cdn.roots.io/app/uploads/carrot.svg" alt="Carrot" width="120" height="90"></a> <a href="https://wordpress.com/"><img src="https://cdn.roots.io/app/uploads/wordpress.svg" alt="WordPress.com" width="120" height="90"></a> <a href="https://worksitesafety.ca/careers/"><img src="https://cdn.roots.io/app/uploads/worksite-safety.svg" alt="Worksite Safety" width="120" height="90"></a> <a href="https://www.itineris.co.uk/"><img src="https://cdn.roots.io/app/uploads/itineris.svg" alt="Itineris" width="120" height="90"></a> <a href="https://bonsai.so/"><img src="https://cdn.roots.io/app/uploads/bonsai.svg" alt="Bonsai" width="120" height="90"></a>
-</div>
+## Stripe & Google Pay
+Stripe ist vorinstalliert. Das MU-Plugin `web/app/mu-plugins/myshop-payment-config.php` synchronisiert Einstellungen anhand von `.env`.
 
-## Overview
+Wichtige Variablen:
+```
+STRIPE_ENABLED=true
+STRIPE_TESTMODE=true
+STRIPE_TEST_PUBLISHABLE_KEY=...
+STRIPE_TEST_SECRET_KEY=...
+STRIPE_LIVE_PUBLISHABLE_KEY=...
+STRIPE_LIVE_SECRET_KEY=...
+STRIPE_TEST_WEBHOOK_SECRET=...
+STRIPE_WEBHOOK_SECRET=...
+STRIPE_ENABLE_GOOGLE_PAY=true
+```
+Optional: `STRIPE_PAYMENT_REQUEST_BUTTON_TYPE`, `STRIPE_PAYMENT_REQUEST_BUTTON_THEME`, `STRIPE_PAYMENT_REQUEST_BUTTON_LABEL`.
 
-Bedrock is a WordPress boilerplate for developers that want to manage their projects with Git and Composer. Much of the philosophy behind Bedrock is inspired by the [Twelve-Factor App](http://12factor.net/) methodology, including the [WordPress specific version](https://roots.io/twelve-factor-wordpress/).
+## AP2 – Agent Payments Protocol
+Das Plugin `web/app/mu-plugins/myshop-ap2-gateway.php` stellt `POST /wp-json/myshop/ap2/v1/mandates` bereit.
 
-- Better folder structure
-- Dependency management with [Composer](https://getcomposer.org)
-- Easy WordPress configuration with environment specific files
-- Environment variables with [Dotenv](https://github.com/vlucas/phpdotenv)
-- Autoloader for mu-plugins (use regular plugins as mu-plugins)
+- Authentifizierung über Header `X-AP2-Token` (siehe `.env`: `AP2_API_TOKEN`, `AP2_ENABLED`).
+- Erwartet ein `cart_mandate`-Payload nach AP2-Spezifikation.
+- Legt eine WooCommerce-Bestellung an und erstellt einen Stripe PaymentIntent; Mandat-ID wird als Metadaten gespeichert.
+- Rückgabe enthält `order_id`, `mandate_id`, `payment_intent` und optional `client_secret`.
 
-## Getting Started
+Vertiefende Notizen & offene Aufgaben: `docs/ap2-overview.md`.
 
-See the [Bedrock installation documentation](https://roots.io/bedrock/docs/installation/).
+_Nächste Schritte:_ Mandatsignaturen (VCs) prüfen, Rückkanal zum Agent implementieren, Push-Payments testen.
 
-## Stay Connected
+## Deployment & Worktrees
+### Deployments über Make
+```bash
+make deploy-tunnel      # Demo via Tunnel
+make deploy-staging     # GitHub Action für Staging triggern
+make deploy-production  # Live-Deployment
+```
 
-- Join us on Discord by [sponsoring us on GitHub](https://github.com/sponsors/roots)
-- Participate on [Roots Discourse](https://discourse.roots.io/)
-- Follow [@rootswp on Twitter](https://twitter.com/rootswp)
-- Read the [Roots Blog](https://roots.io/blog/)
-- Subscribe to the [Roots Newsletter](https://roots.io/newsletter/)
+### Worktrees
+```bash
+./worktree-manager.sh create feature/new-checkout myshop-new-checkout
+./worktree-manager.sh start myshop-new-checkout
+./worktree-manager.sh stop myshop-new-checkout
+```
+
+Jede Worktree-Instanz erhält eigene Ports (`docker-compose.override.yml` wird automatisch erzeugt).
+
+## Content & Utilities
+- `content-automation.sh` – Samples generieren/importieren/exportieren.
+- `wp-utils.sh` – URLs prüfen, Permalinks flushen, Admin-Passwort ändern, Dev-/Prod-Mode schalten.
+
+## Troubleshooting
+```bash
+./wp-utils.sh show-urls        # Aktuelle WordPress-URLs
+./wp-utils.sh flush-permalinks # Permalink-Probleme fixen
+docker compose ps             # Container-Status
+./named-tunnel.sh troubleshoot # Tunnel-Diagnose
+```
+
+## Sicherheit
+- Admin-Passwörter anpassen: `./wp-utils.sh update-admin <neues-passwort>`
+- `.env` & Secrets niemals einchecken (siehe `.env.*.example` + `.gitignore`).
+- Cloudflare Access oder Password Protection für öffentliche Tunnel konfigurieren.
+- Stripe-Webhooks nur über HTTPS und mit Secret validieren.
+
+## Ressourcen
+- Bedrock-Dokumentation: https://roots.io/bedrock/
+- AP2 Spezifikation: https://a2aprotocol.ai/ap2-protocol
+- GitHub Actions Workflows: `.github/workflows/`
+- Weitere Notizen & Architektur: `docs/`
+
+---
+Bei Fragen oder neuen Anforderungen gerne Issues/Tickets im Repo anlegen oder den Worktree-Workflow nutzen.
