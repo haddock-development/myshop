@@ -38,7 +38,18 @@
       "Bash(./content-automation.sh generate-sample:*)",
       "Bash(./content-automation.sh generate:*)",
       "Read(//Users/goenke.lorenzen/myshop-demo/**)",
-      "Bash(./content-automation.sh:*)"
+      "Bash(./content-automation.sh:*)",
+      "Bash(/Applications/Docker.app/Contents/Resources/bin/docker compose version)",
+      "Bash(/Applications/Docker.app/Contents/Resources/bin/docker compose ps)",
+      "Bash(curl:*)",
+      "Bash(./tunnel-manager.sh:*)",
+      "Bash(./ngrok-tunnel.sh:*)",
+      "Bash(./worktree-manager.sh list:*)",
+      "Bash(git worktree:*)",
+      "Bash(./deploy.sh:*)",
+      "Read(//Users/goenke.lorenzen/myshop-premium/**)",
+      "Bash(/Applications/Docker.app/Contents/Resources/bin/docker compose up -d)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []
