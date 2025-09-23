@@ -49,7 +49,10 @@
       "Bash(./deploy.sh:*)",
       "Read(//Users/goenke.lorenzen/myshop-premium/**)",
       "Bash(/Applications/Docker.app/Contents/Resources/bin/docker compose up -d)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(ssh:*)",
+      "Bash(ssh-add:*)",
+      "Bash(pkill:*)"
     ],
     "deny": [],
     "ask": []
