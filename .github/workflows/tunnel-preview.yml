@@ -157,6 +157,9 @@ jobs:
 
       - name: 🏗️ Install WordPress
         run: |
+          # Allow git operations inside the container volume
+          docker compose -f docker-compose.ci.yml exec -T php git config --global --add safe.directory /var/www/html
+
           # Install Composer dependencies
           docker compose -f docker-compose.ci.yml exec -T php composer install --no-dev --optimize-autoloader
 
