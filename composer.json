@@ -44,7 +44,8 @@
     "wpackagist-plugin/woocommerce-germanized": "*",
     "wpackagist-plugin/woocommerce-gateway-stripe": "^9.9",
     "wpackagist-plugin/woocommerce-paypal-payments": "*",
-    "wpackagist-plugin/wp-mail-logging": "*"
+    "wpackagist-plugin/wp-mail-logging": "*",
+    "stripe/stripe-php": "^15.5"
   },
   "require-dev": {
     "roave/security-advisories": "dev-latest",

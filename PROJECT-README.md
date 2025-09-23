@@ -148,6 +148,37 @@ make help                  # All available make commands
 - **`.tunnel-config`** - Named Tunnel Konfiguration (wird beim Setup erstellt)
 - **`tunnel-config.example`** - Beispiel für Tunnel-Konfiguration
 
+## 💳 Zahlungen (Stripe & Google Pay)
+
+Stripe ist bereits als WooCommerce-Gateway im Projekt enthalten. Ein neues MU-Plugin (`web/app/mu-plugins/myshop-payment-config.php`) liest Stripe-Einstellungen aus Env-Variablen und aktiviert auf Wunsch Google Pay (Payment Request Buttons).
+
+1. **Env-Werte setzen** – Trage deine Schlüssel in `.env` ein (`STRIPE_LIVE_PUBLISHABLE_KEY`, `STRIPE_LIVE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, optional Test-Keys sowie `STRIPE_ENABLE_GOOGLE_PAY`). Die Beispiel-Dateien enthalten Platzhalter.
+2. **Test- oder Live-Modus steuern** – `STRIPE_TESTMODE=true` hält den Shop im Sandbox-Modus, `false` aktiviert Live-Zahlungen.
+3. **Google Pay aktivieren** – `STRIPE_ENABLE_GOOGLE_PAY=true` schaltet die Payment Request Buttons frei (Chrome/Android → Google Pay, Safari → Apple Pay). Button-Optik kannst du mit `STRIPE_PAYMENT_REQUEST_BUTTON_*` Variablen anpassen.
+4. **Webhook konfigurieren** – Hinterlege deine Stripe-Webhooks (`STRIPE_TEST_WEBHOOK_SECRET`/`STRIPE_WEBHOOK_SECRET`). Der Endpunkt lautet standardmäßig `https://<domain>/wc-api/WC_Gateway_Stripe`.
+5. **Anmeldung im Backend** – Nach dem nächsten Seitenaufruf übernimmt WooCommerce automatisch die Werte. Prüfe unter `WooCommerce → Einstellungen → Zahlungen → Stripe`, ob alles wie erwartet aktiv ist.
+
+> Hinweis: Für zusätzliche Zahlungsmethoden (SEPA, Klarna, Sofort, …) nutzt du weiterhin die Stripe-Einstellungen im Backend oder ergänzt weitere Env-Variablen im MU-Plugin.
+
+## 🤖 AP2 Agent Payments
+
+- **Endpoint**: `POST /wp-json/myshop/ap2/v1/mandates`
+- **Plugin**: `web/app/mu-plugins/myshop-ap2-gateway.php`
+- **Auth**: Header `X-AP2-Token: <AP2_API_TOKEN>` (siehe `.env`)
+
+### Ablauf (V0 Prototyp)
+1. Ein AP2-kompatibler Shopping-Agent erzeugt `intent`- und `cart`-Mandate und ruft den Endpoint auf.
+2. Der Gateway validiert Token & Währung, legt eine WooCommerce-Bestellung an und speichert Mandaten-Metadaten (`_ap2_mandate_id`).
+3. Es wird automatisch ein Stripe PaymentIntent via `stripe/stripe-php` erzeugt; `client_secret` geht zurück an den Agent.
+4. Bestellung verbleibt auf Status `on-hold`, bis Stripe-Webhooks/Checkout den Vorgang abschließen.
+
+### Konfiguration
+- `.env`: `AP2_ENABLED`, `AP2_API_TOKEN`, `AP2_STATEMENT_DESCRIPTOR`
+- Trusted Agenten erhalten den Token out-of-band.
+- Erweiterte Spezifikationsnotizen in `docs/ap2-overview.md`
+
+> TODO: Mandate-Signaturen verifizieren (Verifiable Credentials), Rückkanal an den Agent, Push-Payments & Mehrhändler-Carts.
+
 ## 🔄 Typische Workflows
 
 ### Lokale Entwicklung
