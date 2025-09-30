@@ -3,6 +3,20 @@
 <head>
     <meta charset="<?php bloginfo('charset'); ?>">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script>
+        (function () {
+            try {
+                var storageKey = 'myshop-theme';
+                var stored = localStorage.getItem(storageKey);
+                var mediaQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+                var prefersDark = mediaQuery ? mediaQuery.matches : false;
+                var theme = stored || (prefersDark ? 'dark' : 'light');
+                document.documentElement.dataset.theme = theme;
+            } catch (error) {
+                // Ignore storage access issues (e.g. private mode).
+            }
+        })();
+    </script>
     <?php wp_head(); ?>
 </head>
 <body <?php body_class(); ?>>
@@ -52,6 +66,21 @@ $cart_count  = function_exists('WC') && WC()->cart ? WC()->cart->get_cart_conten
                     <span class="nav-actions__badge"><?php echo (int) $cart_count; ?></span>
                 <?php endif; ?>
             </a>
+            <button
+                class="theme-toggle"
+                type="button"
+                data-theme-toggle
+                aria-pressed="false"
+                aria-label="<?php esc_attr_e('Switch to dark mode', 'myshop-modern'); ?>"
+                data-label-dark="<?php esc_attr_e('Switch to dark mode', 'myshop-modern'); ?>"
+                data-label-light="<?php esc_attr_e('Switch to light mode', 'myshop-modern'); ?>"
+                data-text-dark="<?php esc_attr_e('Dark', 'myshop-modern'); ?>"
+                data-text-light="<?php esc_attr_e('Light', 'myshop-modern'); ?>"
+            >
+                <span class="theme-toggle__icon theme-toggle__icon--sun" aria-hidden="true">☀️</span>
+                <span class="theme-toggle__icon theme-toggle__icon--moon" aria-hidden="true">🌙</span>
+                <span class="theme-toggle__text"><?php esc_html_e('Theme', 'myshop-modern'); ?></span>
+            </button>
             <button class="nav-toggle" data-nav-toggle aria-label="Toggle navigation" aria-expanded="false">
                 <span>Menü</span>
             </button>
@@ -67,6 +96,21 @@ if ($desktop_menu) {
         <div class="mobile-nav__actions">
             <a class="mobile-nav__link" href="<?php echo esc_url($account_url); ?>"><?php esc_html_e('Account', 'myshop-modern'); ?></a>
             <a class="mobile-nav__link" href="<?php echo esc_url($cart_url); ?>"><?php esc_html_e('Warenkorb', 'myshop-modern'); ?></a>
+            <button
+                class="theme-toggle"
+                type="button"
+                data-theme-toggle
+                aria-pressed="false"
+                aria-label="<?php esc_attr_e('Switch to dark mode', 'myshop-modern'); ?>"
+                data-label-dark="<?php esc_attr_e('Switch to dark mode', 'myshop-modern'); ?>"
+                data-label-light="<?php esc_attr_e('Switch to light mode', 'myshop-modern'); ?>"
+                data-text-dark="<?php esc_attr_e('Dark', 'myshop-modern'); ?>"
+                data-text-light="<?php esc_attr_e('Light', 'myshop-modern'); ?>"
+            >
+                <span class="theme-toggle__icon theme-toggle__icon--sun" aria-hidden="true">☀️</span>
+                <span class="theme-toggle__icon theme-toggle__icon--moon" aria-hidden="true">🌙</span>
+                <span class="theme-toggle__text"><?php esc_html_e('Theme', 'myshop-modern'); ?></span>
+            </button>
         </div>
     </div>
 </header>
